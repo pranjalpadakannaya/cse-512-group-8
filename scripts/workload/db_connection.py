@@ -24,7 +24,7 @@ class CockroachDBConnection:
             maxconn=20,
             host=host,
             port=port,
-            database='ecommerce',
+            database='tpch',
             user='root',
         )
         
