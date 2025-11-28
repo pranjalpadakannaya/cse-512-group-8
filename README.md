@@ -91,6 +91,10 @@ cockroach node status --insecure --host=192.168.0.140:26257
 ```
 http://192.168.0.140:8080
 ```
+### To access CockroachSQL
 
+```
+cockroach sql --insecure --host=192.168.0.140:26257
+```
 
 
