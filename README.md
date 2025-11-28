@@ -6,11 +6,11 @@ This repo is dedicated to the course project of CSE-512 (Distributed Database Sy
 ### Pranjal (Host) Nodes 1 and 2
 
 ```
-cockroach start --insecure --store=node1 --listen-addr=192.168.0.140:26257 --http-addr=192.168.0.140:8080 --join=192.168.0.61:26257,192.168.0.74:26257
+cockroach start --insecure --store=node1 --listen-addr=192.168.0.140:26257 --http-addr=192.168.0.140:8080
 ```
 
 ```
-cockroach start --insecure --store=node2 --listen-addr=192.168.0.140:26258 --http-addr=192.168.0.140:8081 --join=192.168.0.140:26257,192.168.0.61:26257,192.168.0.74:26257
+cockroach start --insecure --store=node2 --listen-addr=192.168.0.140:26258 --http-addr=192.168.0.140:8081 --join=192.168.0.140:26257
 ```
 
 Then run the below only once all other primary nodes have run
