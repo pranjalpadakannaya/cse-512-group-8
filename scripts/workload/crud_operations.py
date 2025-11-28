@@ -1,5 +1,6 @@
 """
 CRUD Operations for E-Commerce Order Processing
+UPDATED FOR CORRECT TPC-H COLUMN NAMES
 """
 
 import random
@@ -25,11 +26,11 @@ class EcommerceCRUD:
         Create a new order with line items
         
         Args:
-            custkey: Customer key
+            custkey: Customer key (C_CUSTKEY)
             items: List of (partkey, suppkey, quantity, price) tuples
         
         Returns:
-            orderkey of created order
+            O_ORDERKEY of created order
         """
         start_time = time.time()
         
@@ -45,21 +46,21 @@ class EcommerceCRUD:
         
         operations = []
         
-        # Insert order
+        # Insert order (using O_* columns)
         order_query = """
-        INSERT INTO orders (orderkey, custkey, orderstatus, totalprice, orderdate, 
-                          orderpriority, clerk, shippriority, comment)
+        INSERT INTO ORDERS (O_ORDERKEY, O_CUSTKEY, O_ORDERSTATUS, O_TOTALPRICE, O_ORDERDATE, 
+                          O_ORDERPRIORITY, O_CLERK, O_SHIPPRIORITY, O_COMMENT)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         operations.append((order_query, (orderkey, custkey, orderstatus, totalprice, 
                                         orderdate, orderpriority, clerk, shippriority, comment)))
         
-        # Insert line items
+        # Insert line items (using L_* columns)
         for i, (partkey, suppkey, quantity, price) in enumerate(items, 1):
             lineitem_query = """
-            INSERT INTO lineitem (orderkey, partkey, suppkey, linenumber, quantity,
-                                extendedprice, discount, tax, returnflag, linestatus,
-                                shipdate, commitdate, receiptdate, shipinstruct, shipmode, comment)
+            INSERT INTO LINEITEM (L_ORDERKEY, L_PARTKEY, L_SUPPKEY, L_LINENUMBER, L_QUANTITY,
+                                L_EXTENDEDPRICE, L_DISCOUNT, L_TAX, L_RETURNFLAG, L_LINESTATUS,
+                                L_SHIPDATE, L_COMMITDATE, L_RECEIPTDATE, L_SHIPINSTRUCT, L_SHIPMODE, L_COMMENT)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             extendedprice = price * quantity
@@ -79,7 +80,6 @@ class EcommerceCRUD:
                                                shipdate, commitdate, receiptdate, shipinstruct, 
                                                shipmode, lineitem_comment)))
         
-        # Execute transaction
         try:
             self.db.execute_transaction(operations)
             elapsed = time.time() - start_time
@@ -90,7 +90,7 @@ class EcommerceCRUD:
             return None
     
     def create_customer(self, custkey: int = None) -> int:
-        """Create a new customer"""
+        """Create a new customer (using C_* columns)"""
         start_time = time.time()
         
         if custkey is None:
@@ -105,7 +105,7 @@ class EcommerceCRUD:
         comment = f"Customer created {datetime.now()}"
         
         query = """
-        INSERT INTO customer (custkey, name, address, nationkey, phone, acctbal, mktsegment, comment)
+        INSERT INTO CUSTOMER (C_CUSTKEY, C_NAME, C_ADDRESS, C_NATIONKEY, C_PHONE, C_ACCTBAL, C_MKTSEGMENT, C_COMMENT)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
         
@@ -122,26 +122,26 @@ class EcommerceCRUD:
     # ==================== READ Operations ====================
     
     def get_order_details(self, orderkey: int):
-        """Get full order details including line items"""
+        """Get full order details including line items (using O_* and C_* columns)"""
         start_time = time.time()
         
         query = """
-        SELECT o.*, c.name as customer_name, c.mktsegment
-        FROM orders o
-        JOIN customer c ON o.custkey = c.custkey
-        WHERE o.orderkey = %s
+        SELECT o.*, c.C_NAME as customer_name, c.C_MKTSEGMENT
+        FROM ORDERS o
+        JOIN CUSTOMER c ON o.O_CUSTKEY = c.C_CUSTKEY
+        WHERE o.O_ORDERKEY = %s
         """
         
         try:
             order = self.db.execute_query(query, (orderkey,))
             
-            # Get line items
+            # Get line items (using L_*, P_*, S_* columns)
             lineitem_query = """
-            SELECT l.*, p.name as part_name, s.name as supplier_name
-            FROM lineitem l
-            JOIN part p ON l.partkey = p.partkey
-            JOIN supplier s ON l.suppkey = s.suppkey
-            WHERE l.orderkey = %s
+            SELECT l.*, p.P_NAME as part_name, s.S_NAME as supplier_name
+            FROM LINEITEM l
+            JOIN PART p ON l.L_PARTKEY = p.P_PARTKEY
+            JOIN SUPPLIER s ON l.L_SUPPKEY = s.S_SUPPKEY
+            WHERE l.L_ORDERKEY = %s
             """
             lineitems = self.db.execute_query(lineitem_query, (orderkey,))
             
@@ -157,13 +157,13 @@ class EcommerceCRUD:
             return None
     
     def get_customer_orders(self, custkey: int, limit: int = 10):
-        """Get recent orders for a customer"""
+        """Get recent orders for a customer (using O_* and C_* columns)"""
         start_time = time.time()
         
         query = """
-        SELECT * FROM orders
-        WHERE custkey = %s
-        ORDER BY orderdate DESC
+        SELECT * FROM ORDERS
+        WHERE O_CUSTKEY = %s
+        ORDER BY O_ORDERDATE DESC
         LIMIT %s
         """
         
@@ -177,24 +177,24 @@ class EcommerceCRUD:
             return None
     
     def search_parts(self, part_type: str = None, max_price: float = None):
-        """Search for parts by type and price"""
+        """Search for parts by type and price (using P_* columns)"""
         start_time = time.time()
         
         conditions = []
         params = []
         
         if part_type:
-            conditions.append("type LIKE %s")
+            conditions.append("P_TYPE LIKE %s")
             params.append(f"%{part_type}%")
         
         if max_price:
-            conditions.append("retailprice <= %s")
+            conditions.append("P_RETAILPRICE <= %s")
             params.append(max_price)
         
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         
         query = f"""
-        SELECT * FROM part
+        SELECT * FROM PART
         WHERE {where_clause}
         LIMIT 100
         """
@@ -215,9 +215,9 @@ class EcommerceCRUD:
         start_time = time.time()
         
         query = """
-        UPDATE orders
-        SET orderstatus = %s
-        WHERE orderkey = %s
+        UPDATE ORDERS
+        SET O_ORDERSTATUS = %s
+        WHERE O_ORDERKEY = %s
         """
         
         try:
@@ -230,13 +230,13 @@ class EcommerceCRUD:
             return False
     
     def update_customer_balance(self, custkey: int, amount: float):
-        """Update customer account balance"""
+        """Update customer account balance (using C_* columns)"""
         start_time = time.time()
         
         query = """
-        UPDATE customer
-        SET acctbal = acctbal + %s
-        WHERE custkey = %s
+        UPDATE CUSTOMER
+        SET C_ACCTBAL = C_ACCTBAL + %s
+        WHERE C_CUSTKEY = %s
         """
         
         try:
@@ -249,13 +249,13 @@ class EcommerceCRUD:
             return False
     
     def update_inventory(self, partkey: int, suppkey: int, quantity_delta: int):
-        """Update part inventory (increase/decrease available quantity)"""
+        """Update part inventory (using PS_* columns)"""
         start_time = time.time()
         
         query = """
-        UPDATE partsupp
-        SET availqty = availqty + %s
-        WHERE partkey = %s AND suppkey = %s
+        UPDATE PARTSUPP
+        SET PS_AVAILQTY = PS_AVAILQTY + %s
+        WHERE PS_PARTKEY = %s AND PS_SUPPKEY = %s
         """
         
         try:
@@ -270,12 +270,12 @@ class EcommerceCRUD:
     # ==================== DELETE Operations ====================
     
     def delete_order(self, orderkey: int):
-        """Delete an order and its line items"""
+        """Delete an order and its line items (using O_* and L_* columns)"""
         start_time = time.time()
         
         operations = [
-            ("DELETE FROM lineitem WHERE orderkey = %s", (orderkey,)),
-            ("DELETE FROM orders WHERE orderkey = %s", (orderkey,))
+            ("DELETE FROM LINEITEM WHERE L_ORDERKEY = %s", (orderkey,)),
+            ("DELETE FROM ORDERS WHERE O_ORDERKEY = %s", (orderkey,))
         ]
         
         try:
@@ -290,16 +290,16 @@ class EcommerceCRUD:
     # ==================== Analytics Queries ====================
     
     def get_top_customers(self, limit: int = 10):
-        """Get customers with highest total order value"""
+        """Get customers with highest total order value (using C_* and O_* columns)"""
         start_time = time.time()
         
         query = """
-        SELECT c.custkey, c.name, c.mktsegment, 
-               COUNT(o.orderkey) as num_orders,
-               SUM(o.totalprice) as total_spent
-        FROM customer c
-        JOIN orders o ON c.custkey = o.custkey
-        GROUP BY c.custkey, c.name, c.mktsegment
+        SELECT c.C_CUSTKEY, c.C_NAME, c.C_MKTSEGMENT, 
+               COUNT(o.O_ORDERKEY) as num_orders,
+               SUM(o.O_TOTALPRICE) as total_spent
+        FROM CUSTOMER c
+        JOIN ORDERS o ON c.C_CUSTKEY = o.O_CUSTKEY
+        GROUP BY c.C_CUSTKEY, c.C_NAME, c.C_MKTSEGMENT
         ORDER BY total_spent DESC
         LIMIT %s
         """
@@ -314,18 +314,18 @@ class EcommerceCRUD:
             return None
     
     def get_revenue_by_region(self):
-        """Get total revenue by region"""
+        """Get total revenue by region (using R_*, N_*, C_*, O_* columns)"""
         start_time = time.time()
         
         query = """
-        SELECT r.name as region, 
-               COUNT(DISTINCT o.orderkey) as num_orders,
-               SUM(o.totalprice) as total_revenue
-        FROM region r
-        JOIN nation n ON r.regionkey = n.regionkey
-        JOIN customer c ON n.nationkey = c.nationkey
-        JOIN orders o ON c.custkey = o.custkey
-        GROUP BY r.regionkey, r.name
+        SELECT r.R_NAME as region, 
+               COUNT(DISTINCT o.O_ORDERKEY) as num_orders,
+               SUM(o.O_TOTALPRICE) as total_revenue
+        FROM REGION r
+        JOIN NATION n ON r.R_REGIONKEY = n.N_REGIONKEY
+        JOIN CUSTOMER c ON n.N_NATIONKEY = c.C_NATIONKEY
+        JOIN ORDERS o ON c.C_CUSTKEY = o.O_CUSTKEY
+        GROUP BY r.R_REGIONKEY, r.R_NAME
         ORDER BY total_revenue DESC
         """
         
