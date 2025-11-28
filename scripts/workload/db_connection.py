@@ -26,7 +26,6 @@ class CockroachDBConnection:
             port=port,
             database='ecommerce',
             user='root',
-            # No password in insecure mode
         )
         
         print(f"✓ Connection pool created to {self.primary_node}")
@@ -40,19 +39,9 @@ class CockroachDBConnection:
         self.connection_pool.putconn(conn)
     
     def execute_query(self, query: str, params: tuple = None, fetch: bool = True):
-        """
-        Execute a query with automatic retry logic
-        
-        Args:
-            query: SQL query string
-            params: Query parameters
-            fetch: Whether to fetch results
-        
-        Returns:
-            Query results or None
-        """
+        """Execute a query with automatic retry logic"""
         max_retries = 3
-        retry_delay = 0.1  # seconds
+        retry_delay = 0.1
         
         for attempt in range(max_retries):
             conn = None
@@ -77,10 +66,9 @@ class CockroachDBConnection:
                 if conn:
                     conn.rollback()
                 
-                # Check if it's a serialization error (retry-able)
-                if '40001' in str(e):  # Serialization failure
+                if '40001' in str(e):
                     if attempt < max_retries - 1:
-                        time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                        time.sleep(retry_delay * (2 ** attempt))
                         continue
                 
                 print(f"Database error: {e}")
@@ -93,12 +81,7 @@ class CockroachDBConnection:
         raise Exception(f"Query failed after {max_retries} retries")
     
     def execute_transaction(self, operations: list):
-        """
-        Execute multiple operations in a single transaction
-        
-        Args:
-            operations: List of (query, params) tuples
-        """
+        """Execute multiple operations in a single transaction"""
         max_retries = 3
         
         for attempt in range(max_retries):
@@ -107,14 +90,11 @@ class CockroachDBConnection:
                 conn = self.get_connection()
                 cursor = conn.cursor()
                 
-                # Begin transaction
                 cursor.execute("BEGIN")
                 
-                # Execute all operations
                 for query, params in operations:
                     cursor.execute(query, params if params else ())
                 
-                # Commit transaction
                 cursor.execute("COMMIT")
                 return True
                 
@@ -141,7 +121,6 @@ class CockroachDBConnection:
         print("✓ All connections closed")
 
 
-# Convenience functions
 def get_db_connection():
     """Get a global database connection instance"""
     return CockroachDBConnection()
