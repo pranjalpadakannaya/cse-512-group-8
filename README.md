@@ -6,7 +6,7 @@ This repo is dedicated to the course project of CSE-512 (Distributed Database Sy
 ### Pranjal (Host) Nodes 1 and 2
 
 ```
-cockroach start --insecure --store=node1 --listen-addr=192.168.0.140:26257 --http-addr=192.168.0.140:8080
+cockroach start --insecure --store=node1 --listen-addr=192.168.0.140:26257 --http-addr=192.168.0.140:8080 --join=192.168.0.140:26257
 ```
 
 ```
