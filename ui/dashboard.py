@@ -67,7 +67,7 @@ if 'crud' not in st.session_state:
     st.session_state.crud = EcommerceCRUD(st.session_state.db)
 
 # Header
-st.markdown('<div class="main-header">🪳 CockroachDB Cluster Monitor</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🪳 CockroachDB Cluster Monitor (CSE-512)</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 # Sidebar
@@ -160,24 +160,45 @@ with tab1:
         
         node_data = []
         for node in nodes:
-            node_id = node['desc']['node_id']
-            address = node['desc']['address']['address_field']
-            is_live = node.get('liveness', {}).get('is_live', False)
-            started_at = node.get('started_at', '')
+            try:
+                # Try the expected structure first
+                if 'desc' in node and 'node_id' in node['desc']:
+                    node_id = node['desc']['node_id']
+                    address = node['desc'].get('address', {}).get('address_field', 'Unknown')
+                # Alternative structure
+                elif 'node_id' in node:
+                    node_id = node['node_id']
+                    address = node.get('address', {}).get('address_field', 'Unknown')
+                # Fallback
+                else:
+                    # Try to extract from any available field
+                    node_id = node.get('id', 'Unknown')
+                    address = str(node.get('address', 'Unknown'))
+                
+                is_live = node.get('liveness', {}).get('is_live', False)
+                started_at = node.get('started_at', '')
+                
+                if started_at:
+                    try:
+                        start_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                        uptime = datetime.now(start_time.tzinfo) - start_time
+                        uptime_str = str(uptime).split('.')[0]
+                    except:
+                        uptime_str = 'Unknown'
+                else:
+                    uptime_str = 'Unknown'
+                
+                node_data.append({
+                    'Node ID': node_id,
+                    'Address': address,
+                    'Status': '🟢 LIVE' if is_live else '🔴 DEAD',
+                    'Uptime': uptime_str
+                })
             
-            if started_at:
-                start_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
-                uptime = datetime.now(start_time.tzinfo) - start_time
-                uptime_str = str(uptime).split('.')[0]
-            else:
-                uptime_str = 'Unknown'
-            
-            node_data.append({
-                'Node ID': node_id,
-                'Address': address,
-                'Status': '🟢 LIVE' if is_live else '🔴 DEAD',
-                'Uptime': uptime_str
-            })
+            except Exception as e:
+                st.error(f"Error parsing node data: {e}")
+                st.json(node)  # Show the actual structure for debugging
+                continue
         
         df_nodes = pd.DataFrame(node_data)
         st.dataframe(df_nodes, use_container_width=True, hide_index=True)
@@ -273,7 +294,7 @@ with tab3:
     
     with col1:
         if st.button("Show All Tables"):
-            query = "SHOW TABLES FROM ecommerce;"
+            query = "SHOW TABLES FROM tpch;"
             st.code(query, language="sql")
             result = st.session_state.db.execute_query(query)
             if result:
@@ -281,7 +302,7 @@ with tab3:
                 st.dataframe(df, use_container_width=True)
         
         if st.button("Recent Orders"):
-            query = "SELECT * FROM ecommerce.ORDERS ORDER BY O_ORDERDATE DESC LIMIT 10;"
+            query = "SELECT * FROM tpch.ORDERS ORDER BY O_ORDERDATE DESC LIMIT 10;"
             st.code(query, language="sql")
             result = st.session_state.db.execute_query(query)
             if result:
@@ -291,8 +312,8 @@ with tab3:
         if st.button("Top Customers"):
             query = """
             SELECT c.C_NAME, COUNT(o.O_ORDERKEY) as num_orders, SUM(o.O_TOTALPRICE) as total_spent
-            FROM ecommerce.CUSTOMER c
-            JOIN ecommerce.ORDERS o ON c.C_CUSTKEY = o.O_CUSTKEY
+            FROM tpch.CUSTOMER c
+            JOIN tpch.ORDERS o ON c.C_CUSTKEY = o.O_CUSTKEY
             GROUP BY c.C_CUSTKEY, c.C_NAME
             ORDER BY total_spent DESC
             LIMIT 10;
@@ -305,10 +326,10 @@ with tab3:
         
         if st.button("Table Row Counts"):
             query = """
-            SELECT 'ORDERS' as table_name, COUNT(*) as row_count FROM ecommerce.ORDERS
-            UNION ALL SELECT 'LINEITEM', COUNT(*) FROM ecommerce.LINEITEM
-            UNION ALL SELECT 'CUSTOMER', COUNT(*) FROM ecommerce.CUSTOMER
-            UNION ALL SELECT 'PART', COUNT(*) FROM ecommerce.PART;
+            SELECT 'ORDERS' as table_name, COUNT(*) as row_count FROM tpch.ORDERS
+            UNION ALL SELECT 'LINEITEM', COUNT(*) FROM tpch.LINEITEM
+            UNION ALL SELECT 'CUSTOMER', COUNT(*) FROM tpch.CUSTOMER
+            UNION ALL SELECT 'PART', COUNT(*) FROM tpch.PART;
             """
             st.code(query, language="sql")
             result = st.session_state.db.execute_query(query)
@@ -321,7 +342,7 @@ with tab3:
     # Custom query
     st.subheader("Custom Query")
     custom_query = st.text_area("Enter SQL query:", height=150,
-                                placeholder="SELECT * FROM ecommerce.orders LIMIT 10;")
+                                placeholder="SELECT * FROM tpch.orders LIMIT 10;")
     
     if st.button("▶️ Execute Query"):
         if custom_query:
