@@ -1,19 +1,34 @@
 """
 Workload Simulator - Generate realistic e-commerce traffic
+FIXED: Accepts CRUD instance to share metrics with dashboard
 """
 
 import random
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .db_connection import CockroachDBConnection
-from .crud_operations import EcommerceCRUD
+from scripts.workload.db_connection import CockroachDBConnection
+from scripts.workload.crud_operations import EcommerceCRUD
 import json
 
 class WorkloadSimulator:
-    def __init__(self, db_connection: CockroachDBConnection):
-        self.db = db_connection
-        self.crud = EcommerceCRUD(db_connection)
+    def __init__(self, crud_or_db):
+        """
+        Initialize simulator with either CRUD instance or DB connection
+        
+        Args:
+            crud_or_db: Either EcommerceCRUD instance (from dashboard) 
+                       or CockroachDBConnection (standalone)
+        """
+        if isinstance(crud_or_db, EcommerceCRUD):
+            # Dashboard passed CRUD instance - use it directly (shares metrics!)
+            self.crud = crud_or_db
+            self.db = crud_or_db.db
+        else:
+            # Standalone mode - create own CRUD instance
+            self.db = crud_or_db
+            self.crud = EcommerceCRUD(crud_or_db)
+        
         self.is_running = False
         
         # Workload distribution (percentage)
@@ -36,23 +51,118 @@ class WorkloadSimulator:
         
         return 'read_order'
     
+    def _ensure_customer_exists(self, custkey):
+        """Create customer if doesn't exist (fixes foreign key violation)"""
+        try:
+            # Check if customer exists
+            check_query = "SELECT C_CUSTKEY FROM tpch.CUSTOMER WHERE C_CUSTKEY = %s"
+            result = self.db.execute_query(check_query, (custkey,))
+            
+            if not result:
+                # Customer doesn't exist - create it
+                self.crud.create_customer(custkey)
+            
+            return True
+        except Exception as e:
+            print(f"Error ensuring customer exists: {e}")
+            return False
+    
+    def _ensure_part_supplier_exists(self, partkey, suppkey):
+        """Create part, supplier, and partsupp if they don't exist"""
+        try:
+            # Check/create part
+            part_check = "SELECT P_PARTKEY FROM tpch.PART WHERE P_PARTKEY = %s"
+            if not self.db.execute_query(part_check, (partkey,)):
+                # Create part
+                part_query = """
+                INSERT INTO tpch.PART (P_PARTKEY, P_NAME, P_MFGR, P_BRAND, P_TYPE, 
+                                      P_SIZE, P_CONTAINER, P_RETAILPRICE, P_COMMENT)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                name = f"Part#{partkey:09d}"
+                mfgr = random.choice(['Manufacturer#1', 'Manufacturer#2', 'Manufacturer#3'])
+                brand = f"Brand#{random.randint(1, 5)}{random.randint(1, 5)}"
+                ptype = random.choice(['STANDARD', 'SMALL', 'MEDIUM', 'LARGE', 'ECONOMY'])
+                size = random.randint(1, 50)
+                container = random.choice(['SM CASE', 'SM BOX', 'SM PACK', 'LG CASE', 'LG BOX'])
+                price = round(random.uniform(100.0, 2000.0), 2)
+                comment = f"Part {partkey}"
+                
+                self.db.execute_query(part_query, (partkey, name, mfgr, brand, ptype, 
+                                                   size, container, price, comment), fetch=False)
+            
+            # Check/create supplier
+            supp_check = "SELECT S_SUPPKEY FROM tpch.SUPPLIER WHERE S_SUPPKEY = %s"
+            if not self.db.execute_query(supp_check, (suppkey,)):
+                # Create supplier
+                supp_query = """
+                INSERT INTO tpch.SUPPLIER (S_SUPPKEY, S_NAME, S_ADDRESS, S_NATIONKEY, 
+                                          S_PHONE, S_ACCTBAL, S_COMMENT)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """
+                name = f"Supplier#{suppkey:09d}"
+                address = f"{random.randint(1, 999)} Supply St"
+                nationkey = random.randint(0, 24)
+                phone = f"{random.randint(10,99)}-{random.randint(100,999)}-{random.randint(1000,9999)}"
+                acctbal = round(random.uniform(-999.99, 9999.99), 2)
+                comment = f"Supplier {suppkey}"
+                
+                self.db.execute_query(supp_query, (suppkey, name, address, nationkey, 
+                                                   phone, acctbal, comment), fetch=False)
+            
+            # Check/create partsupp
+            ps_check = "SELECT PS_PARTKEY FROM tpch.PARTSUPP WHERE PS_PARTKEY = %s AND PS_SUPPKEY = %s"
+            if not self.db.execute_query(ps_check, (partkey, suppkey)):
+                # Create partsupp
+                ps_query = """
+                INSERT INTO tpch.PARTSUPP (PS_PARTKEY, PS_SUPPKEY, PS_AVAILQTY, 
+                                          PS_SUPPLYCOST, PS_COMMENT)
+                VALUES (%s, %s, %s, %s, %s)
+                """
+                availqty = random.randint(100, 10000)
+                supplycost = round(random.uniform(1.0, 1000.0), 2)
+                comment = f"Part {partkey} from supplier {suppkey}"
+                
+                self.db.execute_query(ps_query, (partkey, suppkey, availqty, 
+                                                supplycost, comment), fetch=False)
+            
+            return True
+        except Exception as e:
+            print(f"Error ensuring part/supplier exists: {e}")
+            return False
+    
     def _execute_create_order(self):
-        """Execute create order operation"""
-        # Get random customer
-        custkey = random.randint(1, 1000)
+        """Execute create order operation with foreign key handling"""
+        try:
+            # Get random customer and ensure it exists
+            custkey = random.randint(1, 1000)
+            if not self._ensure_customer_exists(custkey):
+                return ('create_order', False)
+            
+            # Generate random items and ensure they exist
+            num_items = random.randint(1, 5)
+            items = []
+            for _ in range(num_items):
+                partkey = random.randint(1, 1000)
+                suppkey = random.randint(1, 100)  # Smaller range for suppliers
+                
+                # Ensure part/supplier/partsupp exist
+                if not self._ensure_part_supplier_exists(partkey, suppkey):
+                    continue
+                
+                quantity = random.randint(1, 50)
+                price = round(random.uniform(10.0, 1000.0), 2)
+                items.append((partkey, suppkey, quantity, price))
+            
+            if not items:
+                return ('create_order', False)
+            
+            orderkey = self.crud.create_order(custkey, items)
+            return ('create_order', orderkey is not None)
         
-        # Generate random items
-        num_items = random.randint(1, 5)
-        items = []
-        for _ in range(num_items):
-            partkey = random.randint(1, 1000)
-            suppkey = random.randint(1, 1000)
-            quantity = random.randint(1, 50)
-            price = round(random.uniform(10.0, 1000.0), 2)
-            items.append((partkey, suppkey, quantity, price))
-        
-        orderkey = self.crud.create_order(custkey, items)
-        return ('create_order', orderkey is not None)
+        except Exception as e:
+            print(f"Error creating order: {e}")
+            return ('create_order', False)
     
     def _execute_read_order(self):
         """Execute read order operation"""
@@ -92,7 +202,7 @@ class WorkloadSimulator:
             elif operation == 'analytics':
                 return self._execute_analytics()
         except Exception as e:
-            print(f"Error in transaction {operation}: {e}")
+            print(f"Transaction error: {e}")
             return (operation, False)
     
     def run_workload(self, num_transactions: int = 1000, num_threads: int = 10):
