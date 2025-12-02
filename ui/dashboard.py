@@ -107,7 +107,7 @@ def parse_node_safely(node):
 # =====================================================================
 
 # Header
-st.markdown('<div class="main-header">🪳 CockroachDB Cluster Monitor (CSE-512)</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">CockroachDB Cluster Monitor for E-Commerce Order Processing - Group 8 (CSE-512)</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 # Sidebar
