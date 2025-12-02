@@ -1,12 +1,13 @@
 """
 CockroachDB Cluster Health Monitor
 Monitors node status, replication, and cluster health
+UPDATED FOR COCKROACHDB v25.3 API FORMAT
 """
 
 import requests
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 class ClusterMonitor:
     def __init__(self, config_file='config/cluster_config.json'):
@@ -23,12 +24,40 @@ class ClusterMonitor:
                            if f"{n['host']}:{n['port']}" == self.primary_node)
         self.admin_url = f"http://{primary_host}:{primary_http}"
     
+    def _is_node_live(self, updated_at_ns, threshold_seconds=600):
+        """
+        Determine if node is live based on updatedAt timestamp
+        CockroachDB v25.3 doesn't have explicit 'liveness' field in /_status/nodes
+        """
+        if not updated_at_ns:
+            return False
+        
+        try:
+            # Convert nanoseconds to seconds
+            updated_at_seconds = int(updated_at_ns) / 1_000_000_000
+            current_time = datetime.now(timezone.utc).timestamp()
+            
+            # If updated within threshold (default 10 minutes), consider live
+            age_seconds = current_time - updated_at_seconds
+            return age_seconds < threshold_seconds
+        except:
+            return False
+    
     def get_node_status(self):
         """Get status of all nodes in the cluster"""
         try:
             response = requests.get(f"{self.admin_url}/_status/nodes", timeout=5)
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                
+                # Parse and enrich with liveness information
+                if 'nodes' in data:
+                    for node in data['nodes']:
+                        # Add computed liveness based on updatedAt
+                        updated_at = node.get('updatedAt')
+                        node['is_live'] = self._is_node_live(updated_at)
+                
+                return data
             else:
                 print(f"Error getting node status: {response.status_code}")
                 return None
@@ -71,25 +100,35 @@ class ClusterMonitor:
         if node_status and 'nodes' in node_status:
             nodes = node_status['nodes']
             
+            # Count live vs dead nodes
+            live_count = sum(1 for n in nodes if n.get('is_live', False))
+            dead_count = len(nodes) - live_count
+            
             print(f"Total Nodes: {len(nodes)}")
+            print(f"Live Nodes: {live_count}")
+            print(f"Dead Nodes: {dead_count}")
             print(f"\nNode Details:")
-            print(f"{'ID':<5} {'Address':<25} {'Status':<10} {'Uptime':<15}")
+            print(f"{'ID':<5} {'Address':<30} {'Status':<10} {'Last Updated':<25}")
             print(f"{'-'*70}")
             
             for node in nodes:
-                node_id = node['desc']['node_id']
-                address = node['desc']['address']['address_field']
-                is_live = 'LIVE' if node.get('liveness', {}).get('is_live', False) else 'DEAD'
-                started_at = node.get('started_at', '')
+                # v25.3 API format: desc.nodeId and desc.address.addressField
+                node_id = node['desc']['nodeId']
+                address = node['desc']['address']['addressField']
+                is_live = 'LIVE' if node.get('is_live', False) else 'DEAD'
                 
-                if started_at:
-                    start_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
-                    uptime = datetime.now(start_time.tzinfo) - start_time
-                    uptime_str = str(uptime).split('.')[0]  # Remove microseconds
+                # Convert nanosecond timestamp to readable format
+                updated_at_ns = node.get('updatedAt', '')
+                if updated_at_ns:
+                    try:
+                        updated_at_seconds = int(updated_at_ns) / 1_000_000_000
+                        last_updated = datetime.fromtimestamp(updated_at_seconds).strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        last_updated = 'Unknown'
                 else:
-                    uptime_str = 'Unknown'
+                    last_updated = 'Unknown'
                 
-                print(f"{node_id:<5} {address:<25} {is_live:<10} {uptime_str:<15}")
+                print(f"{node_id:<5} {address:<30} {is_live:<10} {last_updated:<25}")
         
         else:
             print("❌ Unable to retrieve node status")

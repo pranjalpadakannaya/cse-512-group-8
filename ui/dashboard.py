@@ -1,6 +1,7 @@
 """
 CockroachDB Cluster Monitoring Dashboard
 Real-time visualization of cluster health, performance metrics, and node control
+FIXED FOR COCKROACHDB v25.3 API FORMAT
 """
 
 import streamlit as st
@@ -65,6 +66,45 @@ if 'db' not in st.session_state:
     st.session_state.db = CockroachDBConnection()
 if 'crud' not in st.session_state:
     st.session_state.crud = EcommerceCRUD(st.session_state.db)
+
+# ==================== SAFE NODE PARSING FOR v25.3 ====================
+def parse_node_safely(node):
+    """
+    Parse node data for CockroachDB v25.3 API format
+    
+    v25.3 API Structure (uses camelCase!):
+    - node_id: desc.nodeId
+    - address: desc.address.addressField
+    - liveness: computed from updatedAt timestamp (no explicit liveness field)
+    """
+    
+    # Extract node ID (v25.3 uses camelCase: nodeId)
+    node_id = node.get('desc', {}).get('nodeId', 'Unknown')
+    
+    # Extract address (v25.3 uses camelCase: addressField)
+    address = node.get('desc', {}).get('address', {}).get('addressField', 'Unknown')
+    
+    # Liveness is computed by cluster_monitor based on updatedAt
+    is_live = node.get('is_live', False)
+    
+    # Get timestamp
+    updated_at_ns = node.get('updatedAt', '')
+    if updated_at_ns:
+        try:
+            updated_at_seconds = int(updated_at_ns) / 1_000_000_000
+            updated_at = datetime.fromtimestamp(updated_at_seconds).strftime('%Y-%m-%d %H:%M:%S')
+        except:
+            updated_at = 'Unknown'
+    else:
+        updated_at = 'Unknown'
+    
+    return {
+        'node_id': node_id,
+        'address': address,
+        'is_live': is_live,
+        'last_updated': updated_at
+    }
+# =====================================================================
 
 # Header
 st.markdown('<div class="main-header">🪳 CockroachDB Cluster Monitor (CSE-512)</div>', unsafe_allow_html=True)
@@ -137,11 +177,13 @@ with tab1:
     if node_status and 'nodes' in node_status:
         nodes = node_status['nodes']
         
+        # Parse all nodes
+        parsed_nodes = [parse_node_safely(node) for node in nodes]
+        live_nodes = sum(1 for n in parsed_nodes if n['is_live'])
+        total_nodes = len(nodes)
+        
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
-        
-        live_nodes = sum(1 for n in nodes if n.get('liveness', {}).get('is_live', False))
-        total_nodes = len(nodes)
         
         with col1:
             st.metric("Total Nodes", total_nodes)
@@ -159,49 +201,19 @@ with tab1:
         st.subheader("Node Details")
         
         node_data = []
-        for node in nodes:
-            try:
-                # Try the expected structure first
-                if 'desc' in node and 'node_id' in node['desc']:
-                    node_id = node['desc']['node_id']
-                    address = node['desc'].get('address', {}).get('address_field', 'Unknown')
-                # Alternative structure
-                elif 'node_id' in node:
-                    node_id = node['node_id']
-                    address = node.get('address', {}).get('address_field', 'Unknown')
-                # Fallback
-                else:
-                    # Try to extract from any available field
-                    node_id = node.get('id', 'Unknown')
-                    address = str(node.get('address', 'Unknown'))
-                
-                is_live = node.get('liveness', {}).get('is_live', False)
-                started_at = node.get('started_at', '')
-                
-                if started_at:
-                    try:
-                        start_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
-                        uptime = datetime.now(start_time.tzinfo) - start_time
-                        uptime_str = str(uptime).split('.')[0]
-                    except:
-                        uptime_str = 'Unknown'
-                else:
-                    uptime_str = 'Unknown'
-                
-                node_data.append({
-                    'Node ID': node_id,
-                    'Address': address,
-                    'Status': '🟢 LIVE' if is_live else '🔴 DEAD',
-                    'Uptime': uptime_str
-                })
-            
-            except Exception as e:
-                st.error(f"Error parsing node data: {e}")
-                st.json(node)  # Show the actual structure for debugging
-                continue
+        for parsed in parsed_nodes:
+            node_data.append({
+                'Node ID': parsed['node_id'],
+                'Address': parsed['address'],
+                'Status': '🟢 LIVE' if parsed['is_live'] else '🔴 DEAD',
+                'Last Updated': parsed['last_updated']
+            })
         
-        df_nodes = pd.DataFrame(node_data)
-        st.dataframe(df_nodes, use_container_width=True, hide_index=True)
+        if node_data:
+            df_nodes = pd.DataFrame(node_data)
+            st.dataframe(df_nodes, use_container_width=True, hide_index=True)
+        else:
+            st.error("❌ Could not parse any node data")
         
         # Node status visualization
         st.subheader("Node Status Visualization")
