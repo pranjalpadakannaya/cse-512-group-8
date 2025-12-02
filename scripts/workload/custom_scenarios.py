@@ -3,7 +3,7 @@ Custom workload scenarios for specific testing
 """
 
 from workload_simulator import WorkloadSimulator
-from db_connection import CockroachDBConnection
+from .db_connection import CockroachDBConnection
 import time
 
 def scenario_high_read(db):

@@ -6,8 +6,8 @@ import random
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from db_connection import CockroachDBConnection
-from crud_operations import EcommerceCRUD
+from .db_connection import CockroachDBConnection
+from .crud_operations import EcommerceCRUD
 import json
 
 class WorkloadSimulator:

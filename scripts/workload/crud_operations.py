@@ -7,7 +7,7 @@ import random
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
-from db_connection import CockroachDBConnection
+from .db_connection import CockroachDBConnection
 
 class EcommerceCRUD:
     def __init__(self, db: CockroachDBConnection):
