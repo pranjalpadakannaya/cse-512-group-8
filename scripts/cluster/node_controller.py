@@ -1,5 +1,6 @@
 """
 Node Controller - Start, stop, and restart nodes for fault tolerance testing
+FIXED: Returns all nodes from cluster_config.json for dashboard
 """
 
 import subprocess
@@ -17,15 +18,25 @@ class NodeController:
         self.primary_node = self.config['primary_node']
     
     def get_local_nodes(self):
-        """Get nodes running on this laptop"""
+        """
+        Get ALL nodes from cluster configuration
+        FIXED: Returns all nodes so dashboard can display them
+        
+        Note: For actual control, only nodes on this laptop can be controlled
+        """
+        # Return all configured nodes for display
+        return self.nodes
+    
+    def _is_node_local(self, node):
+        """Check if a node is running on this laptop"""
         import socket
-        local_ip = socket.gethostbyname(socket.gethostname())
-        
-        # Also check common local IPs
-        local_ips = [local_ip, 'localhost', '127.0.0.1']
-        
-        local_nodes = [n for n in self.nodes if n['host'] in local_ips]
-        return local_nodes
+        try:
+            local_ip = socket.gethostbyname(socket.gethostname())
+            local_ips = [local_ip, 'localhost', '127.0.0.1', '192.168.0.140']  # Add known local IPs
+            
+            return node['host'] in local_ips
+        except:
+            return False
     
     def stop_node(self, node_id):
         """Stop a specific node (local nodes only)"""
@@ -33,6 +44,11 @@ class NodeController:
         
         if not node:
             print(f"Node {node_id} not found in configuration")
+            return False
+        
+        # Check if node is local
+        if not self._is_node_local(node):
+            print(f"Node {node_id} is on a different laptop - cannot control remotely")
             return False
         
         print(f"Stopping node {node_id} ({node['host']}:{node['port']})...")
@@ -64,6 +80,11 @@ class NodeController:
         
         if not node:
             print(f"Node {node_id} not found in configuration")
+            return False
+        
+        # Check if node is local
+        if not self._is_node_local(node):
+            print(f"Node {node_id} is on a different laptop - cannot control remotely")
             return False
         
         print(f"Starting node {node_id} ({node['host']}:{node['port']})...")
@@ -115,6 +136,11 @@ class NodeController:
             print(f"Node {node_id} not found")
             return False
         
+        # Check if node is local
+        if not self._is_node_local(node):
+            print(f"Node {node_id} is on a different laptop - cannot control remotely")
+            return False
+        
         print(f"Forcefully killing node {node_id}...")
         
         try:
@@ -140,15 +166,16 @@ class NodeController:
 def interactive_menu():
     """Interactive menu for node control"""
     controller = NodeController()
-    local_nodes = controller.get_local_nodes()
+    all_nodes = controller.get_local_nodes()
     
     while True:
         print(f"\n{'='*60}")
         print("NODE CONTROLLER - FAULT INJECTION TOOL")
         print(f"{'='*60}")
-        print("\nLocal Nodes:")
-        for node in local_nodes:
-            print(f"  Node {node['id']}: {node['host']}:{node['port']}")
+        print("\nAll Cluster Nodes:")
+        for node in all_nodes:
+            laptop = node.get('laptop', 'Unknown')
+            print(f"  Node {node['id']}: {node['host']}:{node['port']} ({laptop})")
         
         print("\nOptions:")
         print("1. Stop a node (graceful shutdown)")
