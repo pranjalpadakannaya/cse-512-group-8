@@ -8,7 +8,7 @@
     {"id": 5, "host": "192.168.0.61", "port": 26257, "http_port": 8080, "laptop": "Laptop3"},
     {"id": 6, "host": "192.168.0.61", "port": 26258, "http_port": 8081, "laptop": "Laptop3"},
     {"id": 7, "host": "192.168.0.54", "port": 26258, "http_port": 8081, "laptop": "Laptop4"},
-    {"id": 8, "host": "192.168.0.54", "port": 26258, "http_port": 8081, "laptop": "Laptop4"},
+    {"id": 8, "host": "192.168.0.54", "port": 26258, "http_port": 8081, "laptop": "Laptop4"}
   ],
   "primary_node": "192.168.0.140:26257",
   "replication_factor": 3
