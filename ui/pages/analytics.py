@@ -28,10 +28,10 @@ query = """
 SELECT r.R_NAME as region, 
        COUNT(DISTINCT o.O_ORDERKEY) as num_orders,
        ROUND(SUM(o.O_TOTALPRICE)::numeric, 2) as total_revenue
-FROM ecommerce.REGION r
-JOIN ecommerce.NATION n ON r.R_REGIONKEY = n.N_REGIONKEY
-JOIN ecommerce.CUSTOMER c ON n.N_NATIONKEY = c.C_NATIONKEY
-JOIN ecommerce.ORDERS o ON c.C_CUSTKEY = o.O_CUSTKEY
+FROM tpch.REGION r
+JOIN tpch.NATION n ON r.R_REGIONKEY = n.N_REGIONKEY
+JOIN tpch.CUSTOMER c ON n.N_NATIONKEY = c.C_NATIONKEY
+JOIN tpch.ORDERS o ON c.C_CUSTKEY = o.O_CUSTKEY
 GROUP BY r.R_REGIONKEY, r.R_NAME
 ORDER BY total_revenue DESC;
 """
@@ -67,8 +67,8 @@ query = """
 SELECT p.P_NAME as product,
        SUM(l.L_QUANTITY) as total_quantity,
        ROUND(SUM(l.L_EXTENDEDPRICE)::numeric, 2) as total_sales
-FROM ecommerce.PART p
-JOIN ecommerce.LINEITEM l ON p.P_PARTKEY = l.L_PARTKEY
+FROM tpch.PART p
+JOIN tpch.LINEITEM l ON p.P_PARTKEY = l.L_PARTKEY
 GROUP BY p.P_PARTKEY, p.P_NAME
 ORDER BY total_sales DESC
 LIMIT 10;
