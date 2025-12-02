@@ -1,7 +1,7 @@
 """
 CockroachDB Cluster Monitoring Dashboard
 Real-time visualization of cluster health, performance metrics, and node control
-FIXED FOR COCKROACHDB v25.3 API FORMAT
+FIXED: Passes shared CRUD instance to WorkloadSimulator for metrics tracking
 """
 
 import streamlit as st
@@ -107,7 +107,7 @@ def parse_node_safely(node):
 # =====================================================================
 
 # Header
-st.markdown('<div class="main-header">CockroachDB Cluster Monitor for E-Commerce Order Processing - Group 8 (CSE-512)</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🪳 CockroachDB Cluster Monitor (CSE-512)</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 # Sidebar
@@ -413,7 +413,8 @@ with tab4:
     if st.button("▶️ Run Workload", disabled=(total_pct != 100)):
         from scripts.workload.workload_simulator import WorkloadSimulator
         
-        simulator = WorkloadSimulator(st.session_state.db)
+        # FIXED: Pass shared CRUD instance so metrics are tracked
+        simulator = WorkloadSimulator(st.session_state.crud)
         simulator.workload_mix = {
             'create_order': create_pct,
             'read_order': read_pct,
