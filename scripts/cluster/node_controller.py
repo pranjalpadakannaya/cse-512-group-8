@@ -39,7 +39,7 @@ class NodeController:
             return False
     
     def stop_node(self, node_id):
-        """Stop a specific node (local nodes only)"""
+        """Stop a specific node (local nodes only) - graceful shutdown"""
         node = next((n for n in self.nodes if n['id'] == node_id), None)
         
         if not node:
@@ -54,20 +54,22 @@ class NodeController:
         print(f"Stopping node {node_id} ({node['host']}:{node['port']})...")
         
         try:
-            # Use cockroach quit command
-            cmd = [
-                'cockroach', 'quit',
-                '--insecure',
-                f"--host={node['host']}:{node['port']}"
-            ]
+            # Find process by port
+            find_cmd = f"lsof -ti :{node['port']}"
+            result = subprocess.run(find_cmd, shell=True, capture_output=True, text=True)
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                print(f"✓ Node {node_id} stopped successfully")
+            if result.stdout.strip():
+                pids = result.stdout.strip().split('\n')
+                # Use first PID (cockroach process)
+                pid = pids[0]
+                
+                # Graceful shutdown with SIGTERM
+                kill_cmd = f"kill -TERM {pid}"
+                subprocess.run(kill_cmd, shell=True)
+                print(f"✓ Node {node_id} stopped gracefully (PID: {pid})")
                 return True
             else:
-                print(f"✗ Failed to stop node {node_id}: {result.stderr}")
+                print(f"No process found on port {node['port']}")
                 return False
         
         except Exception as e:
@@ -149,13 +151,21 @@ class NodeController:
             result = subprocess.run(find_cmd, shell=True, capture_output=True, text=True)
             
             if result.stdout.strip():
-                pid = result.stdout.strip()
+                pids = result.stdout.strip().split('\n')
+                # Kill first PID (cockroach main process)
+                pid = pids[0]
+                
                 kill_cmd = f"kill -9 {pid}"
-                subprocess.run(kill_cmd, shell=True)
-                print(f"✓ Node {node_id} process killed (PID: {pid})")
-                return True
+                kill_result = subprocess.run(kill_cmd, shell=True, capture_output=True, text=True)
+                
+                if kill_result.returncode == 0:
+                    print(f"✓ Node {node_id} process killed (PID: {pid})")
+                    return True
+                else:
+                    print(f"✗ Failed to kill process: {kill_result.stderr}")
+                    return False
             else:
-                print(f"No process found on port {node['port']}")
+                print(f"✗ No process found on port {node['port']}")
                 return False
         
         except Exception as e:
