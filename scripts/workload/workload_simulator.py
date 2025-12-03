@@ -323,7 +323,7 @@ class WorkloadSimulator:
         total_time = time.time() - start_time
         self.is_running = False
         
-        # Print summary
+        # Print summary (using only local data - no DB queries!)
         print(f"\n{'='*60}")
         print(f"WORKLOAD SUMMARY")
         print(f"{'='*60}")
@@ -337,20 +337,8 @@ class WorkloadSimulator:
             total_op = counts['success'] + counts['failed']
             print(f"  {op_type}: {counts['success']}/{total_op} successful")
         
-        # Get detailed metrics from CRUD operations
         print(f"\n{'='*60}")
-        print(f"DETAILED PERFORMANCE METRICS")
-        print(f"{'='*60}")
-        metrics = self.crud.get_performance_metrics()
-        for op_type, stats in metrics.items():
-            if stats['count'] > 0:
-                print(f"\n{op_type.upper()} Operations:")
-                print(f"  Count: {stats['count']}")
-                print(f"  Avg Latency: {stats['avg_latency']*1000:.2f} ms")
-                print(f"  Min Latency: {stats['min_latency']*1000:.2f} ms")
-                print(f"  Max Latency: {stats['max_latency']*1000:.2f} ms")
-                print(f"  P95 Latency: {stats['p95_latency']*1000:.2f} ms")
-        
+        print(f"Note: Detailed performance metrics available in Dashboard")
         print(f"{'='*60}\n")
         
         return results
