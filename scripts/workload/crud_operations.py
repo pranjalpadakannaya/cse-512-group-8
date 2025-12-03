@@ -89,6 +89,74 @@ class EcommerceCRUD:
             print(f"Error creating order: {e}")
             return None
     
+    def create_order_with_key(self, custkey: int, items: list, orderkey: int) -> int:
+        """
+        Create a new order with a SPECIFIC order key (for thread-safe generation)
+        
+        Args:
+            custkey: Customer key (C_CUSTKEY)
+            items: List of (partkey, suppkey, quantity, price) tuples
+            orderkey: Pre-assigned unique order key
+        
+        Returns:
+            orderkey if successful, None if failed
+        """
+        start_time = time.time()
+        
+        # Generate order data
+        orderstatus = 'O'  # Open
+        totalprice = sum(item[3] * item[2] for item in items)
+        orderdate = datetime.now().strftime('%Y-%m-%d')
+        orderpriority = random.choice(['1-URGENT', '2-HIGH', '3-MEDIUM', '4-NOT SPECIFIED', '5-LOW'])
+        clerk = f"Clerk#{random.randint(1, 1000):09d}"
+        shippriority = random.randint(0, 1)
+        comment = f"Order created at {datetime.now()}"
+        
+        operations = []
+        
+        # Insert order (using O_* columns) with provided orderkey
+        order_query = """
+        INSERT INTO ORDERS (O_ORDERKEY, O_CUSTKEY, O_ORDERSTATUS, O_TOTALPRICE, O_ORDERDATE, 
+                        O_ORDERPRIORITY, O_CLERK, O_SHIPPRIORITY, O_COMMENT)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        operations.append((order_query, (orderkey, custkey, orderstatus, totalprice, 
+                                        orderdate, orderpriority, clerk, shippriority, comment)))
+        
+        # Insert line items (using L_* columns)
+        for i, (partkey, suppkey, quantity, price) in enumerate(items, 1):
+            lineitem_query = """
+            INSERT INTO LINEITEM (L_ORDERKEY, L_PARTKEY, L_SUPPKEY, L_LINENUMBER, L_QUANTITY,
+                                L_EXTENDEDPRICE, L_DISCOUNT, L_TAX, L_RETURNFLAG, L_LINESTATUS,
+                                L_SHIPDATE, L_COMMITDATE, L_RECEIPTDATE, L_SHIPINSTRUCT, L_SHIPMODE, L_COMMENT)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            extendedprice = price * quantity
+            discount = round(random.uniform(0.0, 0.1), 2)
+            tax = round(random.uniform(0.0, 0.08), 2)
+            returnflag = random.choice(['R', 'A', 'N'])
+            linestatus = 'O'
+            shipdate = (datetime.now() + timedelta(days=random.randint(1, 30))).strftime('%Y-%m-%d')
+            commitdate = (datetime.now() + timedelta(days=random.randint(10, 40))).strftime('%Y-%m-%d')
+            receiptdate = (datetime.now() + timedelta(days=random.randint(15, 50))).strftime('%Y-%m-%d')
+            shipinstruct = random.choice(['DELIVER IN PERSON', 'COLLECT COD', 'NONE', 'TAKE BACK RETURN'])
+            shipmode = random.choice(['AIR', 'MAIL', 'SHIP', 'TRUCK', 'RAIL', 'REG AIR', 'FOB'])
+            lineitem_comment = f"LineItem {i}"
+            
+            operations.append((lineitem_query, (orderkey, partkey, suppkey, i, quantity,
+                                            extendedprice, discount, tax, returnflag, linestatus,
+                                            shipdate, commitdate, receiptdate, shipinstruct, 
+                                            shipmode, lineitem_comment)))
+        
+        try:
+            self.db.execute_transaction(operations)
+            elapsed = time.time() - start_time
+            self.metrics['create'].append(elapsed)
+            return orderkey
+        except Exception as e:
+            print(f"Error creating order with key {orderkey}: {e}")
+            return None
+    
     def create_customer(self, custkey: int = None) -> int:
         """Create a new customer (using C_* columns)"""
         start_time = time.time()

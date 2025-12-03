@@ -31,6 +31,11 @@ class WorkloadSimulator:
         
         self.is_running = False
         
+        # Thread-safe order key generation
+        # Each thread gets its own range to prevent duplicates
+        self._thread_order_counters = {}  # thread_id -> current counter
+        self._lock = threading.Lock()
+        
         # Workload distribution (percentage)
         self.workload_mix = {
             'create_order': 30,
@@ -50,6 +55,27 @@ class WorkloadSimulator:
                 return operation
         
         return 'read_order'
+    
+    def _get_unique_order_key(self):
+        """
+        Generate unique order key for this thread
+        Each thread gets a 1M range: Thread 0: 1-1M, Thread 1: 1M-2M, etc.
+        This prevents duplicate key violations in concurrent workloads
+        """
+        thread_id = threading.get_ident()
+        
+        with self._lock:
+            if thread_id not in self._thread_order_counters:
+                # Assign this thread a range based on number of threads seen so far
+                thread_number = len(self._thread_order_counters)
+                # Start this thread's range at: (thread_number * 1,000,000) + 1
+                self._thread_order_counters[thread_id] = (thread_number * 1_000_000) + 1
+            
+            # Get current counter and increment for next use
+            order_key = self._thread_order_counters[thread_id]
+            self._thread_order_counters[thread_id] += 1
+            
+            return order_key
     
     def _ensure_customer_exists(self, custkey):
         """Create customer if doesn't exist (fixes foreign key violation)"""
@@ -134,6 +160,9 @@ class WorkloadSimulator:
     def _execute_create_order(self):
         """Execute create order operation with foreign key handling"""
         try:
+            # Get unique order key for this thread (prevents duplicates!)
+            orderkey = self._get_unique_order_key()
+            
             # Get random customer and ensure it exists
             custkey = random.randint(1, 1000)
             if not self._ensure_customer_exists(custkey):
@@ -157,8 +186,9 @@ class WorkloadSimulator:
             if not items:
                 return ('create_order', False)
             
-            orderkey = self.crud.create_order(custkey, items)
-            return ('create_order', orderkey is not None)
+            # Create order with unique key
+            success = self.crud.create_order_with_key(custkey, items, orderkey)
+            return ('create_order', success is not None)
         
         except Exception as e:
             print(f"Error creating order: {e}")
