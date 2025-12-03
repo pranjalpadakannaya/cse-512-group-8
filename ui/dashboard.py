@@ -415,6 +415,13 @@ with tab4:
     # Run workload
     if st.button("▶️ Run Workload", disabled=(total_pct != 100)):
         from scripts.workload.workload_simulator import WorkloadSimulator
+        import threading
+        
+        # Initialize workload state in session
+        if 'workload_running' not in st.session_state:
+            st.session_state.workload_running = False
+        if 'workload_results' not in st.session_state:
+            st.session_state.workload_results = None
         
         # FIXED: Pass shared CRUD instance so metrics are tracked
         simulator = WorkloadSimulator(st.session_state.crud)
@@ -425,22 +432,45 @@ with tab4:
             'analytics': analytics_pct
         }
         
+        # Function to run workload in background
+        def run_workload_background():
+            try:
+                results = simulator.run_workload(
+                    num_transactions=num_transactions,
+                    num_threads=num_threads
+                )
+                st.session_state.workload_results = results
+                st.session_state.workload_running = False
+            except Exception as e:
+                st.session_state.workload_results = {'error': str(e)}
+                st.session_state.workload_running = False
+        
+        # Start background thread
+        st.session_state.workload_running = True
+        st.session_state.workload_results = None
+        thread = threading.Thread(target=run_workload_background, daemon=True)
+        thread.start()
+        
+        st.rerun()
+    
+    # Display workload status (polling)
+    if st.session_state.get('workload_running', False):
+        # Workload is running
+        st.info("🔄 Workload running in background...")
         progress_bar = st.progress(0)
-        status_text = st.empty()
         
-        # Show initial status
-        status_text.info("🔄 Running workload...")
+        # Auto-refresh every 2 seconds to check status
+        time.sleep(2)
+        st.rerun()
+    
+    elif st.session_state.get('workload_results') is not None:
+        # Workload completed - show results
+        results = st.session_state.workload_results
         
-        try:
-            # Run workload (this returns even if nodes die)
-            results = simulator.run_workload(
-                num_transactions=num_transactions,
-                num_threads=num_threads
-            )
-            
-            # Workload completed - update UI
-            progress_bar.progress(100)
-            status_text.success("✅ Workload complete!")
+        if 'error' in results:
+            st.error(f"❌ Workload error: {results['error']}")
+        else:
+            st.success("✅ Workload complete!")
             
             # Show results
             col1, col2, col3 = st.columns(3)
@@ -451,10 +481,11 @@ with tab4:
                          delta=f"{results['success']/results['total']*100:.1f}%")
             with col3:
                 st.metric("Failed", results['failed'])
-        
-        except Exception as e:
-            status_text.error(f"❌ Workload error: {e}")
-            st.error(f"Error details: {str(e)}")
+            
+            # Clear results button
+            if st.button("🔄 Run Another Workload"):
+                st.session_state.workload_results = None
+                st.rerun()
 
 # Auto-refresh
 if auto_refresh:
