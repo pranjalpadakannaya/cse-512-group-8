@@ -188,22 +188,49 @@ class WorkloadSimulator:
         
         return ('analytics', result is not None)
     
-    def run_single_transaction(self):
-        """Execute a single random transaction"""
+    def run_single_transaction(self, max_retries=3):
+        """
+        Execute a single random transaction with retry logic
+        Handles connection failures and transient errors gracefully
+        """
         operation = self._get_random_operation()
         
-        try:
-            if operation == 'create_order':
-                return self._execute_create_order()
-            elif operation == 'read_order':
-                return self._execute_read_order()
-            elif operation == 'update_order':
-                return self._execute_update_order()
-            elif operation == 'analytics':
-                return self._execute_analytics()
-        except Exception as e:
-            print(f"Transaction error: {e}")
-            return (operation, False)
+        for attempt in range(max_retries):
+            try:
+                if operation == 'create_order':
+                    return self._execute_create_order()
+                elif operation == 'read_order':
+                    return self._execute_read_order()
+                elif operation == 'update_order':
+                    return self._execute_update_order()
+                elif operation == 'analytics':
+                    return self._execute_analytics()
+            
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # Check if it's a retryable error (connection issues, timeouts)
+                retryable = any(keyword in error_msg for keyword in [
+                    'connection', 'timeout', 'broken pipe', 'reset by peer',
+                    'connection refused', 'no route to host', 'temporary failure',
+                    'deadlock', 'serialization', 'restart transaction'
+                ])
+                
+                if retryable and attempt < max_retries - 1:
+                    # Retryable error and we have retries left
+                    print(f"Retryable error on attempt {attempt + 1}/{max_retries}: {e}")
+                    time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    # Non-retryable error or out of retries
+                    if attempt == max_retries - 1:
+                        print(f"Transaction failed after {max_retries} attempts: {e}")
+                    else:
+                        print(f"Non-retryable transaction error: {e}")
+                    return (operation, False)
+        
+        # Should never reach here, but just in case
+        return (operation, False)
     
     def run_workload(self, num_transactions: int = 1000, num_threads: int = 10):
         """

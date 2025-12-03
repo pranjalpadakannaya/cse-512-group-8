@@ -49,6 +49,17 @@ class CockroachDBConnection:
                 # Get connection from pool
                 conn = self.pool.getconn()
                 
+                # Check if connection is still alive (important when nodes fail)
+                try:
+                    conn.isolation_level  # Quick check if connection is valid
+                except:
+                    # Connection is dead, close it and get a new one
+                    try:
+                        self.pool.putconn(conn, close=True)
+                    except:
+                        pass
+                    conn = self.pool.getconn()
+                
                 # IMPORTANT: Set autocommit for simple queries
                 # Or explicitly manage transactions for complex operations
                 if fetch and not params:
@@ -79,16 +90,28 @@ class CockroachDBConnection:
                 
             except psycopg2.OperationalError as e:
                 # Retry on operational errors (network issues, etc.)
-                if attempt < max_retries - 1:
-                    time.sleep(0.1 * (attempt + 1))
+                error_msg = str(e).lower()
+                if 'connection' in error_msg or 'network' in error_msg or 'timeout' in error_msg:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.1 * (attempt + 1))
+                        if conn:
+                            try:
+                                # Close bad connection
+                                self.pool.putconn(conn, close=True)
+                            except:
+                                pass
+                            conn = None
+                        continue
+                    else:
+                        print(f"Query failed after {max_retries} attempts: {e}")
+                        raise
+                else:
+                    # Non-retryable operational error
                     if conn:
                         try:
                             conn.rollback()
                         except:
                             pass
-                    continue
-                else:
-                    print(f"Query failed after {max_retries} attempts: {e}")
                     raise
                     
             except Exception as e:
@@ -110,8 +133,12 @@ class CockroachDBConnection:
                         pass
                 
                 if conn:
-                    # Return connection to pool
-                    self.pool.putconn(conn)
+                    # Return connection to pool (or close if it's bad)
+                    try:
+                        self.pool.putconn(conn)
+                    except:
+                        # If putconn fails, connection is already closed
+                        pass
     
     def execute_transaction(self, operations, max_retries=3):
         """

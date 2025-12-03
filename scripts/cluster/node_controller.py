@@ -54,22 +54,26 @@ class NodeController:
         print(f"Stopping node {node_id} ({node['host']}:{node['port']})...")
         
         try:
-            # Find process by port
-            find_cmd = f"lsof -ti :{node['port']}"
+            # Find cockroach process specifically listening on this port
+            # This finds the process that OWNS the port, not just connected to it
+            find_cmd = f"lsof -ti :{node['port']} -sTCP:LISTEN"
             result = subprocess.run(find_cmd, shell=True, capture_output=True, text=True)
             
             if result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
-                # Use first PID (cockroach process)
-                pid = pids[0]
+                pid = result.stdout.strip().split('\n')[0]  # First PID only
                 
                 # Graceful shutdown with SIGTERM
                 kill_cmd = f"kill -TERM {pid}"
-                subprocess.run(kill_cmd, shell=True)
-                print(f"✓ Node {node_id} stopped gracefully (PID: {pid})")
-                return True
+                kill_result = subprocess.run(kill_cmd, shell=True, capture_output=True, text=True)
+                
+                if kill_result.returncode == 0:
+                    print(f"✓ Node {node_id} stopped gracefully (PID: {pid})")
+                    return True
+                else:
+                    print(f"✗ Failed to stop: {kill_result.stderr}")
+                    return False
             else:
-                print(f"No process found on port {node['port']}")
+                print(f"✗ No cockroach process found listening on port {node['port']}")
                 return False
         
         except Exception as e:
@@ -98,7 +102,7 @@ class NodeController:
         cmd = [
             'cockroach', 'start',
             '--insecure',
-            f"--store=nodes/node{node_id}",
+            f"--store=node{node_id}",
             f"--listen-addr={node['host']}:{node['port']}",
             f"--http-addr={node['host']}:{node['http_port']}",
             f"--join={join_addrs}",
@@ -146,14 +150,12 @@ class NodeController:
         print(f"Forcefully killing node {node_id}...")
         
         try:
-            # Find process by port
-            find_cmd = f"lsof -ti :{node['port']}"
+            # Find cockroach process specifically listening on this port
+            find_cmd = f"lsof -ti :{node['port']} -sTCP:LISTEN"
             result = subprocess.run(find_cmd, shell=True, capture_output=True, text=True)
             
             if result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
-                # Kill first PID (cockroach main process)
-                pid = pids[0]
+                pid = result.stdout.strip().split('\n')[0]  # First PID only
                 
                 kill_cmd = f"kill -9 {pid}"
                 kill_result = subprocess.run(kill_cmd, shell=True, capture_output=True, text=True)
@@ -165,7 +167,7 @@ class NodeController:
                     print(f"✗ Failed to kill process: {kill_result.stderr}")
                     return False
             else:
-                print(f"✗ No process found on port {node['port']}")
+                print(f"✗ No cockroach process found listening on port {node['port']}")
                 return False
         
         except Exception as e:
