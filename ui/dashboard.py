@@ -1,7 +1,6 @@
 """
 CockroachDB Cluster Monitoring Dashboard
 Real-time visualization of cluster health, performance metrics, and node control
-FIXED: Passes shared CRUD instance to WorkloadSimulator for metrics tracking
 """
 
 import streamlit as st
@@ -120,6 +119,10 @@ with st.sidebar:
     refresh_interval = st.slider("Refresh interval (seconds)", 5, 60, 10)
     
     if st.button("🔄 Refresh Now"):
+        # Clear cached cluster monitor to force fresh data fetch
+        if 'monitor' in st.session_state:
+            del st.session_state.monitor
+        st.session_state.monitor = ClusterMonitor()
         st.rerun()
     
     st.markdown("---")
@@ -425,13 +428,17 @@ with tab4:
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        with st.spinner("Running workload..."):
-            # We can't easily show real-time progress, so just run it
+        # Show initial status
+        status_text.info("🔄 Running workload...")
+        
+        try:
+            # Run workload (this returns even if nodes die)
             results = simulator.run_workload(
                 num_transactions=num_transactions,
                 num_threads=num_threads
             )
             
+            # Workload completed - update UI
             progress_bar.progress(100)
             status_text.success("✅ Workload complete!")
             
@@ -444,6 +451,10 @@ with tab4:
                          delta=f"{results['success']/results['total']*100:.1f}%")
             with col3:
                 st.metric("Failed", results['failed'])
+        
+        except Exception as e:
+            status_text.error(f"❌ Workload error: {e}")
+            st.error(f"Error details: {str(e)}")
 
 # Auto-refresh
 if auto_refresh:
